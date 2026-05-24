@@ -1,0 +1,6 @@
+{
+  "bindings": {
+    "kv": ["STATE"]
+  },
+  "queues": ["jobs"]
+}

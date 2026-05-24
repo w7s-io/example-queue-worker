@@ -1,0 +1,77 @@
+name: Deploy
+
+on: push
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to W7S
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Deploy
+        uses: w7s-io/w7s-cloud@v1
+        with:
+          token: ${{ github.token }}
+
+      - name: Smoke test queue
+        run: |
+          set -euo pipefail
+          base="https://w7s-io.w7s.cloud/example-queue-worker"
+
+          for attempt in {1..12}; do
+            if body="$(curl -fsS -X POST "$base/enqueue?text=smoke-test")"; then
+              echo "$body"
+              id="$(BODY="$body" node - <<'NODE'
+          const body = JSON.parse(process.env.BODY);
+          if (body.service !== "example-queue-worker") {
+            throw new Error(`Unexpected service: ${body.service}`);
+          }
+          if (body.status !== "queued") {
+            throw new Error(`Unexpected enqueue status: ${body.status}`);
+          }
+          if (!body.id) {
+            throw new Error("Missing queued id.");
+          }
+          process.stdout.write(body.id);
+          NODE
+              )"
+              break
+            fi
+            sleep 5
+          done
+
+          test -n "${id:-}"
+
+          for attempt in {1..18}; do
+            body="$(curl -fsS "$base/last")"
+            echo "$body"
+            if BODY="$body" EXPECTED_ID="$id" node - <<'NODE'
+          const body = JSON.parse(process.env.BODY);
+          const message = body.last?.lastMessage;
+          if (message?.body?.id !== process.env.EXPECTED_ID) {
+            process.exit(1);
+          }
+          if (message?.body?.text !== "smoke-test") {
+            throw new Error("Processed message body did not match the smoke payload.");
+          }
+          if (message?.caller?.repository !== "w7s-io/example-queue-worker") {
+            throw new Error(`Unexpected caller: ${message?.caller?.repository}`);
+          }
+          NODE
+            then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          curl -fsS "$base/last"
+          exit 1
