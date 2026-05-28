@@ -61,9 +61,7 @@ const enqueue = async (request: Request, env: Env) => {
     method: "POST",
     headers: {
       authorization: `Bearer ${env.W7S_QUEUE_TOKEN}`,
-      "content-type": "application/json",
-      "x-w7s-queue-caller": env.W7S_REPOSITORY,
-      "x-w7s-queue-environment": env.W7S_ENVIRONMENT
+      "content-type": "application/json"
     },
     body: JSON.stringify(payload)
   });
